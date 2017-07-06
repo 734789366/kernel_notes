@@ -1,0 +1,37 @@
+Linux内核一般将处理器的虚拟地址空间分为两部分，底部比较大的部分用于用户进程，顶部则专用于内核。在IA-32系统上，地址空间在用户进程和内核之间划分的典型比例是3：1。
+可用的物理内存将直接映射到内核的地址空间中，如果物理内存比可以映射到内核地址空间中的数量多，那么内核必须借助于高端内存方法来管理”多余的“内存。在IA-32系统上，可以直接管理的内存数量不超过896MiB。
+在内核使用高端内存之前，必须使用kmap()和kunmap()函数将其映射到内核的虚拟地址空间。
+有两种类型的计算机，分别以不同的方法管理内存：
+	（1）UMA计算机(uniform memory access)，一致内存访问计算机，将可用内存以连续方式组织起来。SMP系统的每个处理器访问各个内存区都是同样快。
+	（2）NUMA计算机(non-uniform memory access)，非一致内存访问计算机，总是多处理器计算机，各个CPU有本地内存，可支持特别快速的访问。各个处理器之间通过总线连接起来，以支持对其他CPU的本地内存的访问，速度低于访问本地内存。
+
+内存划分为结点，每个结点关联到系统中的处理器，在内核中表示为pg_data_t的实例。每个结点又划分为内存域，一个结点最多由三个内存域组成。ZONE_DMA、ZONE_NORMAL、ZONE_HIGHMEM。
+    结点表示，struct pg_data_t
+    结点状态，enum node_states{
+                    N_HIGH_MEMORY,
+                    N_NORMAL_MEMORY,
+                    ....    
+                }
+    内存域，struct zone
+    冷热页，pageset，热页是指页已经加载到CPU高速缓存，与在内存中的页相比，其数据能够更快地访问。在多处理器系统上，每个CPU都有一个或多个高速缓存，各个CPU的管理必须是独立的。
+    struct zone{
+         ...
+        struct per_cpu_pageset pageset[NR_CPUS];
+         ...    
+    }
+    页帧，代表系统中的最小内存单位，对内存中的每个页都会创建一个struct page实例。在IA-32系统中，标准页帧长度为4K。
+    页标志通过struct page的flags成员的各个比特位描述：
+    PG_locked，页是否锁定
+    PG_lru，最近最少使用，用于页的回收和切换
+    PG_uptodate，页的数据是否已经从块设备读取，期间没有出错
+    PG_reclaim，回收页
+    PG_dirty，与磁盘相比，页的内容已经改变。
+    PAGEXXX(page)，检查页是否设置了PG_xxx位
+    SetPageXXX，在某个比特位没有设置的情况下，设置某个比特位，并返回原值
+    ClearPageXXX，无条件的清除某个比特位
+    TestClearPageXXX，清除某个比特位的设置，并返回原值
+
+页表用于建立用户进程的虚拟地址空间和系统物理内存之间的关联。
+内核源代码假定void *和unsigned long类型所需的比特位数相同，之间可以相互转换而不损失信息。
+void *类型用于可能指向内存中任何字节位置的指针。而内存管理更喜欢用unsiged long。
+BITS_PER_LONG定义了unsigned long变量的比特位数目。PGD对应全局页表索引，PUD对应上层页表索引，PMD对应中间层页表索引，PTE对应于最后一级页表索引，Offset指定了页内偏移。
